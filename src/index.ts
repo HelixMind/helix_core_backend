@@ -15,14 +15,14 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 3000;
 
 app.get('/', async (req: Request, res: Response) => {
-  const new_user = await User.build({
-    fname: "Johnson",
-    lname: "Eremie",
-    email: "reremie1@gmail.com",
-    password: "Aa1!jfhss"
-  })
+  // const new_user = await User.build({
+  //   fname: "Johnson",
+  //   lname: "Eremie",
+  //   email: "reremie1@gmail.com",
+  //   password: "Aa1!jfhss"
+  // })
 
-  await new_user.save();
+  // await new_user.save();
 
   res.send('Hello, World!');
 });
