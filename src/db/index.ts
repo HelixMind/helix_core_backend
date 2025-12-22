@@ -1,9 +1,12 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import colors from "colors";
 import { Sequelize } from "sequelize";
 
 import { User } from "./Schema/User.js";
 
-const sequelize = new Sequelize("mysql://3NpFRM3HtHiE3ZX.root:emBpqpqfgYNXsm5q@gateway01.eu-central-1.prod.aws.tidbcloud.com:4000/helixai_db", {
+const sequelize = new Sequelize(process.env.DATABASE_CONNECTION_URL!, {
     dialect: "mysql",
     dialectOptions: {
         ssl: {
