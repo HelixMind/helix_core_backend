@@ -5,6 +5,7 @@ import colors from "colors";
 import { User } from "../db/Schema/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { UniqueConstraintError } from "sequelize";
 
 async function login_controller(req: Request, res: Response) {
     const body = req.body;
@@ -110,6 +111,14 @@ async function signup_controller(req: Request, res: Response) {
                 status: "error",
                 // Formats to: ["email: Invalid email", "password: Too short"]
                 error: error_message
+            });
+        }
+
+        if (error instanceof UniqueConstraintError) {
+            return res.status(409).json({
+                status: "error",
+                // Formats to: ["email: Invalid email", "password: Too short"]
+                error: "A user already exists with this email"
             });
         }
 
