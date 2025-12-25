@@ -97,20 +97,20 @@ async function signup_controller(req: Request, res: Response) {
         })
     } catch (error) {
         if (error instanceof ZodError) {
-            const error_message: Record<string, any> = {};
+            const error_message: string[] = [];
 
             const keys = Object.keys(error.format());
 
             Object.values(error.format()).forEach((error, i) => {
                 if (!Array.isArray(error) && error["_errors"]) {
-                    error_message[keys[i]] = (error["_errors"] as string[]).join(", ");
+                    error_message.push((error["_errors"] as string[]).join(", "));
                 }
             })
 
             return res.status(400).json({
                 status: "error",
                 // Formats to: ["email: Invalid email", "password: Too short"]
-                error: error_message
+                error: error_message.join(", ")
             });
         }
 

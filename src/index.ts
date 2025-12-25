@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { auth_router } from "./router/auth.router.js";
 import colors from "colors";
+import cors from "cors";
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -14,7 +15,29 @@ app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 
-app.get('/', async (req: Request, res: Response) => {
+const allowedOrigins = [
+  "http://localhost:8080", // Your local React dev server
+  "https://your-frontend-app.onrender.com", // Your deployed frontend
+];
+
+const corsOptions = {
+  origin: function (origin: any, callback: (...x: any[]) => any) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true, // Allow cookies if you use them for auth
+};
+
+app.use(cors(corsOptions));
+
+app.get("/", async (req: Request, res: Response) => {
   // const new_user = await User.build({
   //   fname: "Johnson",
   //   lname: "Eremie",
@@ -24,7 +47,7 @@ app.get('/', async (req: Request, res: Response) => {
 
   // await new_user.save();
 
-  res.send('Hello, World!');
+  res.send("Hello, World!");
 });
 
 app.use("/api/v1/auth", auth_router);
