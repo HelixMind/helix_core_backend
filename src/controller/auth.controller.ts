@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { UserCreateInput, UserLoginInput } from "../types/auth.types.js";
 import colors from "colors";
 import { User } from "../db/Schema/User.js";
@@ -94,6 +94,10 @@ async function signup_controller(req: Request, res: Response) {
 
         throw error;
     }
+}
+
+async function forgot_password(req: Request, res: Response) {
+    
 }
 
 export { login_controller, signup_controller };

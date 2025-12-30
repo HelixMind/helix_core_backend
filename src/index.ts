@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
   "http://localhost:8080", // Your local React dev server
-  "https://your-frontend-app.onrender.com", // Your deployed frontend
+  "https://helix-mind.vercel.app", // Your deployed frontend
 ];
 
 const corsOptions = {
