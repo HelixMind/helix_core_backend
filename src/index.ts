@@ -8,6 +8,8 @@ dotenv.config();
 
 import "./db/index.js";
 import { User } from "./db/Schema/User.js";
+import { profile_router } from "./router/profile.router.js";
+import { auth_middleware } from "./middlewares/auth.middleware.js";
 
 const app = express();
 app.use(express.json());
@@ -51,6 +53,9 @@ app.get("/", async (req: Request, res: Response) => {
 });
 
 app.use("/api/v1/auth", auth_router);
+
+app.use(auth_middleware);
+app.use("/api/v1/me", profile_router);
 
 app.listen(PORT, () => {
   console.log(colors.green(`Server is running on http://localhost:${PORT}`));

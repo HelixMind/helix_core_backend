@@ -1,89 +1,77 @@
 import { Request, Response } from "express";
-import {z, ZodError} from "zod";
+import { z, ZodError } from "zod";
 import { UserCreateInput, UserLoginInput } from "../types/auth.types.js";
 import colors from "colors";
 import { User } from "../db/Schema/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { UniqueConstraintError } from "sequelize";
+import { ResponseSchema } from "../types/index.js";
 
 async function login_controller(req: Request, res: Response) {
     const body = req.body;
 
-    try {
-        const validated_body: z.infer<typeof UserLoginInput> = z.parse(UserLoginInput, body) as any; // Validation
+    const validated_body: z.infer<typeof UserLoginInput> = z.parse(
+        UserLoginInput,
+        body
+    ) as any; // Validation
 
-        const user = await User.findOne({
-            where: {
-                email: validated_body.email
-            }
-        });
+    const user = await User.findOne({
+        where: {
+            email: validated_body.email,
+        },
+    });
 
-        if (!user) {
-            return res.status(401).json({
-                status: "error",
-                error: "Invalid email or password"
-            });
-        }
-
-        if (!bcrypt.compareSync(validated_body.password, user.password)) {
-            return res.status(401).json({
-                status: "error",
-                error: "Invalid email or password"
-            });
-        }
-
-        user.password = undefined;
-
-        const jwt_token = jwt.sign(
-            {
-                user: user.id
-            }, 
-            process.env.TOKEN_SECRET!,
-            {
-                expiresIn: "2h"
-            }
-        );
-
-        return res.status(200).json({
-            status: "success",
-            payload: {
-                user,
-                token: jwt_token,
-                message: `User ${user.email} logged in successfully`
-            }
-        })
-    }  catch (error) {
-        if (error instanceof ZodError) {
-            const error_message: Record<string, any> = {};
-
-            const keys = Object.keys(error.format());
-
-            Object.values(error.format()).forEach((error, i) => {
-                if (!Array.isArray(error) && error["_errors"]) {
-                    error_message[keys[i]] = (error["_errors"] as string[]).join(", ");
-                }
-            })
-
-            return res.status(400).json({
-                status: "error",
-                // Formats to: ["email: Invalid email", "password: Too short"]
-                error: error_message
-            });
-        }
-
-        res.status(500).json({
+    if (!user) {
+        return res.status(401).json({
             status: "error",
-            error: error instanceof Error ? error.message : error
-        })
+            error: "Invalid email or password",
+        } as ResponseSchema);
     }
+
+    if (!bcrypt.compareSync(validated_body.password, user.password)) {
+        return res.status(401).json({
+            status: "error",
+            error: "Invalid email or password",
+        } as ResponseSchema);
+    }
+
+    user.password = undefined;
+
+    const jwt_token = jwt.sign(
+        {
+            user: user.id,
+        },
+            process.env.TOKEN_SECRET!,
+        {
+            expiresIn: "2h",
+        }
+    );
+
+    return res.status(200).json({
+        status: "success",
+        payload: {
+            user: {
+                "fname": user.fname,
+                "lname": user.lname,
+                "email": user.email,
+                "createdAt": user.createdAt,
+                "updatedAt": user.updatedAt
+            },
+            token: jwt_token,
+            message: `User ${user.email} logged in successfully`,
+        },
+    } as ResponseSchema);
 }
 
 async function signup_controller(req: Request, res: Response) {
     const body = req.body;
 
     try {
-        const validated_body: z.infer<typeof UserCreateInput> = z.parse(UserCreateInput, body) as any; // Validate
+        const validated_body: z.infer<typeof UserCreateInput> = z.parse(
+            UserCreateInput,
+            body
+        ) as any; // Validate
 
         const new_user = User.build(validated_body);
 
@@ -92,44 +80,20 @@ async function signup_controller(req: Request, res: Response) {
         return res.status(201).json({
             status: "success",
             payload: {
-                message: `User ${new_user.email} has been created`
-            }
-        })
+                message: `User ${new_user.email} has been created`,
+            },
+        } as ResponseSchema);
     } catch (error) {
-        if (error instanceof ZodError) {
-            const error_message: string[] = [];
-
-            const keys = Object.keys(error.format());
-
-            Object.values(error.format()).forEach((error, i) => {
-                if (!Array.isArray(error) && error["_errors"]) {
-                    error_message.push((error["_errors"] as string[]).join(", "));
-                }
-            })
-
-            return res.status(400).json({
-                status: "error",
-                // Formats to: ["email: Invalid email", "password: Too short"]
-                error: error_message.join(", ")
-            });
-        }
-
         if (error instanceof UniqueConstraintError) {
             return res.status(409).json({
                 status: "error",
                 // Formats to: ["email: Invalid email", "password: Too short"]
-                error: "A user already exists with this email"
-            });
+                error: "A user already exists with this email",
+            } as ResponseSchema);
         }
 
-        res.status(500).json({
-            status: "error",
-            error: error instanceof Error ? error.message : error
-        })
+        throw error;
     }
 }
 
-export {
-    login_controller,
-    signup_controller
-}
+export { login_controller, signup_controller };
