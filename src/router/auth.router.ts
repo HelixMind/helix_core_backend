@@ -16,7 +16,7 @@ auth_router.post("/signup", async (req: Request, res: Response) => {
     try {
         await signup_controller(req, res);
     } catch (error) {
-        handleError(error, res);
+        handle_error(error, res);
     }
 });
 
