@@ -2,6 +2,7 @@ import { DataTypes, Sequelize } from "sequelize";
 import { sequelize } from "../index.js";
 import bcrypt from "bcryptjs";
 import { passwordSalt } from "../../constants/salts.js";
+import { Token } from "./Token.js";
 
 const User = sequelize.define(
     "User",
@@ -77,6 +78,7 @@ const User = sequelize.define(
     }
 )
 
+User.hasMany(Token, { foreignKey: 'user_id' });
 await User.sync();
 
 export {

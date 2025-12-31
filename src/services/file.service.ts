@@ -4,7 +4,7 @@ import colors from "colors";
 async function read_file(name: string) {
     try {
         const file = await fs.readFile(name, "utf-8");
-        console.log(`File Read from ${name} \n`, colors.blue(file));
+        return file;
     } catch (error) {
         console.error('File error: \n', colors.red(error instanceof Error ? error.message : JSON.stringify(error)));
     }

@@ -21,19 +21,35 @@ function handle_error(error: any, res: Response) {
     } as ResponseSchema);
   }
 
+  const error_message: string = error instanceof Error ? error.message : JSON.stringify(error);
+
+  if (error_message.startsWith("Custom Error: ")) {
+    const code = error_message.split(" ---- code: Server Error ")[1] ?? 500;
+    const message = (error_message.split(" ---- code: Server Error ")[0] ?? "").replace("Custom Error: ", "").trim();
+    
+    return res.status(parseInt(code)).json({
+      status: "error",
+      error: message,
+    } as ResponseSchema);;
+  }
+
   res.status(500).json({
     status: "error",
-    error: error instanceof Error ? error.message : error,
+    error: error_message,
   } as ResponseSchema);
 }
 
-function throw_custom_error(message: string, code: number, res: Response) {
+function throw_custom_error(message: string, code: number = 500, res?: Response) {
   if (code == 200 || code == 201) throw new Error("Something went wrong");
 
-  return res.status(code).json({
-    status: "error",
-    error: message
-  } as ResponseSchema);
+  if (res) {
+    return res.status(code).json({
+      status: "error",
+      error: message
+    } as ResponseSchema);
+  }
+
+  throw new Error(`Custom Error: ${message} ---- code: Server Error ${code}`)
 }
 
 export { handle_error, throw_custom_error };

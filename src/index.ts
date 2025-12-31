@@ -10,6 +10,10 @@ import "./db/index.js";
 import { User } from "./db/Schema/User.js";
 import { profile_router } from "./router/profile.router.js";
 import { auth_middleware } from "./middlewares/auth.middleware.js";
+import { send_mail } from "./services/mail.service.js";
+import { ResponseSchema } from "./types/index.js";
+import { Token } from "./db/Schema/Token.js";
+import { generate_otp } from "./services/token.service.js";
 
 const app = express();
 app.use(express.json());
@@ -40,17 +44,29 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 app.get("/", async (req: Request, res: Response) => {
-  // const new_user = await User.build({
-  //   fname: "Johnson",
-  //   lname: "Eremie",
-  //   email: "reremie1@gmail.com",
-  //   password: "Aa1!jfhss"
-  // })
-
-  // await new_user.save();
-
-  res.send("Hello, World!");
+  res.send(`Hello, World! ${generate_otp()}`);
 });
+
+app.get("/api/v1/test_mail_service", async (req: Request, res: Response) => {
+  try {
+    await send_mail("reset-password", ["reremie523@gmail.com", "nzenwatachristopher186@gmail.com", "kidly204@gmail.com"], {
+      otp_code: 842931,
+      support_mail: "helix@traction3.com"
+    });
+
+    res.status(200).json({
+      status: "success",
+      payload: {
+        message: "Mailer working",
+      }
+    } as ResponseSchema);
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      error: error instanceof Error ? error.message : JSON.stringify(error),
+    } as ResponseSchema);
+  }
+})
 
 app.use("/api/v1/auth", auth_router);
 
