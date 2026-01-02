@@ -58,8 +58,10 @@ const Token = sequelize.define(
   }
 );
 
-// Token.belongsTo(User, { foreignKey: 'user_id' });
-await Token.sync({  });
+User.hasMany(Token, { foreignKey: 'reference_id' });
+Token.belongsTo(User, { foreignKey: 'reference_id' });
+
+await Token.sync({ });
 
 export {
     Token

@@ -16,7 +16,7 @@ const create_otp = async function(purpose: "confirm_email" | "reset_password" | 
 } = {
     single_use: true
 }): Promise<string> {
-    const tries = 0;
+    var tries = 0;
     var token;
 
     while (true) {
@@ -35,7 +35,8 @@ const create_otp = async function(purpose: "confirm_email" | "reset_password" | 
 
             break;
         } catch (error) {
-            if (error instanceof UniqueConstraintError && (tries < max_token_gen_count)) {
+            tries++;
+            if (error instanceof UniqueConstraintError && (tries <= max_token_gen_count)) {
                 continue;
             }
 

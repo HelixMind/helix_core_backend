@@ -63,13 +63,24 @@ const User = sequelize.define(
         tableName: "users",
         underscored: true,
         hooks: {
-            beforeCreate: (user: any) => {
+            beforeCreate: (user) => {
                 user.fname = user.fname.trim();
                 user.lname = user.lname.trim();
                 user.email = user.email.toLowerCase().trim();
 
                 // Hash password logic can be added here
                 user.password = bcrypt.hashSync(user.password, 10);
+            },
+            beforeUpdate: (user) => {
+                // Normalize fields if they changed
+                if (user.changed('fname')) user.fname = user.fname.trim();
+                if (user.changed('lname')) user.lname = user.lname.trim();
+                if (user.changed('email')) user.email = user.email.toLowerCase().trim();
+
+                // ONLY hash the password if it has been modified
+                if (user.changed('password')) {
+                    user.password = bcrypt.hashSync(user.password, 10);
+                }
             },
             afterCreate: (user: any) => {
                 console.log(`New user created: ${user.email}`);
@@ -78,8 +89,7 @@ const User = sequelize.define(
     }
 )
 
-User.hasMany(Token, { foreignKey: 'user_id' });
-await User.sync();
+await User.sync({ });
 
 export {
     User
