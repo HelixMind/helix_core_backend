@@ -2,7 +2,6 @@ import express, { Request, Response } from "express";
 import { auth_router } from "./router/auth.router.js";
 import colors from "colors";
 import cors from "cors";
-
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -14,23 +13,22 @@ import { send_mail } from "./services/mail.service.js";
 import { ResponseSchema } from "./types/index.js";
 import { Token } from "./db/Schema/Token.js";
 import { generate_otp } from "./services/token.service.js";
+import simRouter from "./router/simulation.router.js";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
-  "http://localhost:8080", // Your local React dev server
-  "https://helix-mind.vercel.app", // Your deployed frontend
+  "http://localhost:8080",
+  "https://helix-mind.vercel.app",
+  "http://localhost:3000"
 ];
 
 const corsOptions = {
   origin: function (origin: any, callback: (...x: any[]) => any) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-
+    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -38,10 +36,15 @@ const corsOptions = {
     }
   },
   methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true, // Allow cookies if you use them for auth
+  credentials: true,
 };
 
+// Apply CORS BEFORE body parsers
 app.use(cors(corsOptions));
+
+// Increase payload size limits (adjust as needed)
+app.use(express.json({ limit: '50mb' })); // Increased from default 100kb
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.get("/", async (req: Request, res: Response) => {
   res.send(`Hello, World! ${generate_otp()}`);
@@ -53,7 +56,7 @@ app.get("/api/v1/test_mail_service", async (req: Request, res: Response) => {
       otp_code: 842931,
       support_mail: "helix@traction3.com"
     });
-
+    
     res.status(200).json({
       status: "success",
       payload: {
@@ -66,12 +69,24 @@ app.get("/api/v1/test_mail_service", async (req: Request, res: Response) => {
       error: error instanceof Error ? error.message : JSON.stringify(error),
     } as ResponseSchema);
   }
-})
+});
 
 app.use("/api/v1/auth", auth_router);
+app.use("/api/v1/simulation", simRouter);
 
 app.use(auth_middleware);
 app.use("/api/v1/me", profile_router);
+
+// Error handler for payload too large
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      status: "error",
+      error: "Payload too large. Maximum size is 50MB."
+    } as ResponseSchema);
+  }
+  next(err);
+});
 
 app.listen(PORT, () => {
   console.log(colors.green(`Server is running on http://localhost:${PORT}`));
