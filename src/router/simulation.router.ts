@@ -13,9 +13,6 @@ simRouter.post("/parse-gff", uploadFasta.array("fasta-file", 5), parseGffControl
 // Endpoint 3: Run the heavy lifting simulation
 simRouter.post("/simulate", uploadFasta.array("fasta-file", 5), simulateController);
 
-simRouter.post("/check-mutation", uploadFasta.fields([
-    {name: "query_fasta_files", maxCount: 1},
-    {name: "ref_fasta_files", maxCount: 1}
-]), checkMutation);
+simRouter.post("/check-mutation", checkMutation);
 
 export default simRouter;

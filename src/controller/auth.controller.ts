@@ -70,6 +70,7 @@ async function login_controller(req: Request, res: Response) {
 
 async function signup_controller(req: Request, res: Response) {
     const body = req.body;
+    console.log(body)
 
     try {
         const validated_body: z.infer<typeof UserCreateInput> = z.parse(
