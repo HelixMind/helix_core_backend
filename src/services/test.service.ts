@@ -1,135 +1,167 @@
-import { Request, Response } from "express";
+// --- BIOLOGICAL CONSTANTS --- 
+const CARRYING_CAPACITY = 10000; 
+const MAX_GROWTH_RATE = 0.35; 
 
-// const express = require('express');
-// const cors = require('cors');
-// const app = express();
-// const PORT = 5001;
+// µ_max (maximum specific growth rate) 
+const K_S = 20; 
 
-// app.use(cors());
-// app.use(express.json({ limit: '50mb' }));
+// Half-saturation constant (Monod) 
+const BASE_MUTATION_RATE = 0.005; 
+const SELECTION_COEFFICIENT = 0.1; 
 
-// Standard Genetic Code for synonymous mutation checking
-export const CODON_MAP: Record<string, string> = {
-    'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M', 'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
-    'AAC':'N', 'AAT':'N', 'AAA':'K', 'AAG':'K', 'AGC':'S', 'AGT':'S', 'AGA':'R', 'AGG':'R',
-    'CTA':'L', 'CTC':'L', 'CTG':'L', 'CTT':'L', 'CCA':'P', 'CCC':'P', 'CCG':'P', 'CCT':'P',
-    'CAC':'H', 'CAT':'H', 'CAA':'Q', 'CAG':'Q', 'CGA':'R', 'CGC':'R', 'CGG':'R', 'CGT':'R',
-    'GTA':'V', 'GTC':'V', 'GTG':'V', 'GTT':'V', 'GCA':'A', 'GCC':'A', 'GCG':'A', 'GCT':'A',
-    'GAC':'D', 'GAT':'D', 'GAA':'E', 'GAG':'E', 'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G',
-    'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S', 'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
-    'TAC':'Y', 'TAT':'Y', 'TAA':'', 'TAG':'', 'TGC':'C', 'TGT':'C', 'TGA':'_', 'TGG':'W',
-};
-
-export class SeededRandom {
-    private seed: number = 0;
-
-    constructor(seed: number) { this.seed = seed; }
-
-    next(): number {
-        this.seed = (this.seed * 9301 + 49297) % 233280;
-        return this.seed / 233280;
+export class MicrobeSimulation { 
+    private population = 0;
+    private timeStep = 0;
+    private avgResistance = 0;
+    private adaptationLog: string[] = [];
+    private growthHistory: {
+        time: number, 
+        population: number,
+    }[] = [];
+    private env: {
+        temperature: number,
+        pH: number,
+        nutrients: number,
+        oxygen: number,
+        antibioticConc: number,
+        antibioticOn?: boolean
+    } = {
+        temperature: 0,
+        pH: 0,
+        nutrients: 100,
+        oxygen: 21,
+        antibioticConc: 0,
+        antibioticOn: false
     }
-}
 
-// 1. IMPROVED FITNESS: Checks for Synonymous vs Missense
-export const calculateFitness = (seq: string, mutations: {type: "substitution" | "insertion" | "deletion", context: "coding" | "non-coding", aminoAcidChange: string}[]) => {
-    let fitness = 100;
+
+    constructor() { this.reset(); } 
+
+    reset() { 
+        this.population = 1000; this.timeStep = 0; this.avgResistance = 0.0; // 0.0 to 1.0 (Genetic trait) 
+        this.adaptationLog = ['Culture inoculated.']; this.growthHistory = []; 
+        this.env = { temperature: 37, pH: 7.0, nutrients: 100, oxygen: 21, antibioticConc: 0, };
+    } 
+        
+    updateEnvironment(updates: typeof this.env) { 
+        // Converts UI boolean to Concentration (µg/mL) 
+        if (updates.antibioticOn !== undefined) { 
+            updates.antibioticConc = updates.antibioticOn ? 50 : 0; 
+            delete updates.antibioticOn; 
+        } 
+        
+        this.env = { ...this.env, ...updates }; 
+    } 
     
-    mutations.forEach(m => {
-        if (m.type === 'substitution' && m.context === 'coding') {
-            // Non-synonymous (Missense) is penalized, Synonymous (Silent) is not
-            if (m.aminoAcidChange && m.aminoAcidChange !== 'none') fitness -= 1.5;
-        } else if (m.type === 'insertion' || m.type === 'deletion') {
-            // Frameshifts are devastating
-            fitness -= 10.0;
-        }
-    });
-
-    // Penalize stop codons
-    const stopCodons = ['TAA', 'TAG', 'TGA'];
-    for (let i = 0; i < seq.length - 2; i += 3) {
-        if (stopCodons.includes(seq.substr(i, 3))) fitness -= 5;
-    }
-    return Math.max(0, fitness);
-};
-
-// 2. KIMURA 2-PARAMETER MODEL: Transitions vs Transversions
-export const getMutatedBase = (original: string, rng: SeededRandom) => {
-    const transitions: Record<string, string> = { 'A': 'G', 'G': 'A', 'C': 'T', 'T': 'C' };
-    const transversions: Record<string, string[]> = { 
-        'A': ['C', 'T'], 'G': ['C', 'T'], 'C': ['A', 'G'], 'T': ['A', 'G'] 
-    };
+    /** * TEMPERATURE MODEL (Gaussian Curve) * Most enzymes denature quickly above 42-45°C. */ 
+    getTemperatureCoeff() { 
+        const T = this.env.temperature; 
+        const T_opt = 37; 
+        const T_max = 46; 
+        const T_min = 10; 
+        if (T <= T_min || T >= T_max) return 0; 
+        
+        // Standard bell curve for enzymatic activity 
+        const sigma = 5; 
+        return Math.exp(-0.5 * Math.pow((T - T_opt) / sigma, 2)); 
+    } 
     
-    // Transitions are statistically ~2x more likely in nature
-    if (rng.next() < 0.66) { 
-        return transitions[original];
-    } else {
-        const choices = transversions[original];
-        return choices[Math.floor(rng.next() * choices.length)];
-    }
-};
-
-// app.post('/api/simulate', (req: Request, res: Response) => {
-//     const { sequence, params } = req.body;
-//     const rng = new SeededRandom(params.seed || Date.now());
+    /** * pH MODEL (Parabolic) * Simulates the narrow window of cytoplasmic pH homeostasis. */ 
+    getPHCoeff() { 
+        const pH = this.env.pH; 
+        const pH_opt = 7.0; 
+        const pH_width = 2.5; // Range of survival (approx 4.5 to 9.5) 
+        
+        let coeff = 1 - Math.pow((pH - pH_opt) / pH_width, 2); 
+        return Math.max(0, coeff); 
+    } 
     
-//     // 3. ENVIRONMENTAL LINKAGE: Temperature affects mutation rate (Arrhenius-like scaling)
-//     const tempCelsius = params.tempUnit === 'F' ? (params.temperature - 32) * 5/9 : params.temperature;
-//     const tempFactor = Math.pow(1.1, (tempCelsius - 37) / 5); 
-//     const effectiveSubRate = params.substitutionRate * tempFactor;
+    /** * NUTRIENT KINETICS (Monod Equation) * Growth rate is a function of substrate concentration. */ 
+    getNutrientCoeff() { 
+        const S = this.env.nutrients; 
+        if (S <= 0) return 0; 
+        return S / (K_S + S); 
+    } 
+    
+    /** * PHARMACODYNAMICS (Hill Equation) * Kill rate based on concentration and resistance. */ 
+    getKillRate() { 
+        const dose = this.env.antibioticConc; 
+        if (dose <= 0) return 0; // Resistance increases the MIC (Minimum Inhibitory Concentration) 
+        
+        const MIC = 10 + (this.avgResistance * 90); 
+        const n = 2; // Hill coefficient 
 
-//     let currentSeq = sequence;
-//     const allMutations: {
-//         generation: number,
-//         position: number,
-//         type: "insertion" | "deletion" | "substitution",
-//         original: any,
-//         mutated: string,
-//         aminoAcidChange: string,
-//         context: 'coding' | 'non-coding'
-//     }[] = [];
-//     const fitnessHistory = [];
-
-//     for (let gen = 1; gen <= params.numGenerations; gen++) {
-//         const seqArray = currentSeq.split('');
-
-//         for (let i = 0; i < currentSeq.length; i++) {
-//             if (rng.next() < effectiveSubRate) {
-//                 const originalBase = seqArray[i];
-//                 const newBase = getMutatedBase(originalBase, rng);
-                
-//                 // Determine Amino Acid Change
-//                 let aaChange = 'none';
-//                 const codonStart = Math.floor(i / 3) * 3;
-//                 const originalCodon: string = currentSeq.substr(codonStart, 3);
-//                 if (originalCodon.length === 3) {
-//                     const tempCodon = originalCodon.split('');
-//                     tempCodon[i % 3] = newBase;
-//                     const newCodon: string = tempCodon.join('');
-//                     if (CODON_MAP[originalCodon] !== CODON_MAP[newCodon]) {
-//                         aaChange = `${CODON_MAP[originalCodon]}->${CODON_MAP[newCodon]}`;
-//                     }
-//                 }
-
-//                 seqArray[i] = newBase;
-//                 allMutations.push({
-//                     generation: gen, position: i, type: 'substitution',
-//                     original: originalBase, mutated: newBase, 
-//                     aminoAcidChange: aaChange,
-//                     context: i < currentSeq.length - 100 ? 'coding' : 'non-coding'
-//                 });
-//             }
-//         }
-//         currentSeq = seqArray.join('');
-//         fitnessHistory.push({ generation: gen, fitness: calculateFitness(currentSeq, allMutations) });
-//     }
-
-//     res.json({
-//         finalSequence: currentSeq,
-//         mutations: allMutations,
-//         fitnessHistory,
-//         hotspots: [] // logic remains the same as previous
-//     });
-// });
-
-// app.listen(PORT, () => console.log(`Scientific Backend running on port ${PORT}`));
+        const efficacy = Math.pow(dose, n) / (Math.pow(MIC, n) + Math.pow(dose, n)); 
+        return 0.4 * efficacy; // Base kill rate of 40% per tick at high efficacy 
+    } 
+    
+    tick() { 
+        this.timeStep += 1; 
+        
+        // 1. Calculate Growth Factors 
+        const tempK = this.getTemperatureCoeff(); 
+        const phK = this.getPHCoeff(); 
+        const nutrientK = this.getNutrientCoeff(); 
+        const oxygenK = this.env.oxygen > 5 ? 1 : 0.2; // Facultative anaerobe model 
+        
+        // 2. Growth Logic 
+        const currentGrowthRate = MAX_GROWTH_RATE * tempK * phK * nutrientK * oxygenK; 
+        const logisticFactor = 1 - (this.population / CARRYING_CAPACITY); 
+        const growthAmount = this.population * currentGrowthRate * logisticFactor; 
+        
+        // 3. Death Logic 
+        const antibioticKillRate = this.getKillRate(); 
+        const deathAmount = this.population * antibioticKillRate; 
+        
+        // 4. Evolution (Selection Pressure) 
+        if (antibioticKillRate > 0.01 && this.population > 0) { 
+            // Natural Selection: Survivors pass on resistance 
+            const selectionPressure = antibioticKillRate * SELECTION_COEFFICIENT; 
+            this.avgResistance = Math.min(1.0, this.avgResistance + selectionPressure); 
+            
+            if (Math.random() < 0.1) { 
+                this.adaptationLog.push( `Step ${this.timeStep}: Selection Pressure → Resistance ${(this.avgResistance * 100).toFixed(1)}%` ); 
+            } 
+        } 
+        
+        // 5. Stress-Induced Mutations (SOS Response) 
+        const stress = 1 - (tempK * phK); 
+        const mutationChance = BASE_MUTATION_RATE * (1 + stress * 5); 
+        
+        if (Math.random() < mutationChance) { 
+            this.avgResistance = Math.min(1.0, this.avgResistance + 0.01); 
+            this.adaptationLog.push(`Step ${this.timeStep}: Spontaneous mutation detected.`); 
+        } 
+        
+        // 6. Update Population and Nutrients 
+        let nextPop = this.population + growthAmount - deathAmount; 
+        
+        // Each new bacterium consumes ~0.05 units of nutrient 
+        const consumption = growthAmount > 0 ? growthAmount * 0.05 : 0; 
+        this.env.nutrients = Math.max(0, this.env.nutrients - consumption); 
+        this.population = Math.max(0, Math.round(nextPop)); 
+        
+        // Log Management 
+        if (this.adaptationLog.length > 10) this.adaptationLog.shift(); 
+        this.growthHistory.push({ time: this.timeStep, population: this.population, }); 
+        
+        return this.getState(); 
+    } 
+    
+    getState() { 
+        return { 
+            population: this.population, 
+            timeStep: this.timeStep, 
+            resistanceLevel: Math.round(this.avgResistance * 100), 
+            growthHistory: this.growthHistory, 
+            adaptationLog: this.adaptationLog, 
+            stressLevels: { 
+                temperature: 1 - this.getTemperatureCoeff(), 
+                ph: 1 - this.getPHCoeff(), 
+                nutrients: 1 - this.getNutrientCoeff(), 
+                resistance: this.avgResistance 
+            }, 
+            environment: this.env 
+        }; 
+    } 
+} 

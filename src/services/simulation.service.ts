@@ -163,3 +163,64 @@ export function parseFASTAService(fasta_files: Express.Multer.File[]) {
 
     return fasta_outputs;
 }
+
+// Standard Genetic Code for synonymous mutation checking
+export const CODON_MAP: Record<string, string> = {
+    'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M', 'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
+    'AAC':'N', 'AAT':'N', 'AAA':'K', 'AAG':'K', 'AGC':'S', 'AGT':'S', 'AGA':'R', 'AGG':'R',
+    'CTA':'L', 'CTC':'L', 'CTG':'L', 'CTT':'L', 'CCA':'P', 'CCC':'P', 'CCG':'P', 'CCT':'P',
+    'CAC':'H', 'CAT':'H', 'CAA':'Q', 'CAG':'Q', 'CGA':'R', 'CGC':'R', 'CGG':'R', 'CGT':'R',
+    'GTA':'V', 'GTC':'V', 'GTG':'V', 'GTT':'V', 'GCA':'A', 'GCC':'A', 'GCG':'A', 'GCT':'A',
+    'GAC':'D', 'GAT':'D', 'GAA':'E', 'GAG':'E', 'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G',
+    'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S', 'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
+    'TAC':'Y', 'TAT':'Y', 'TAA':'', 'TAG':'', 'TGC':'C', 'TGT':'C', 'TGA':'_', 'TGG':'W',
+};
+
+export class SeededRandom {
+    private seed: number = 0;
+
+    constructor(seed: number) { this.seed = seed; }
+
+    next(): number {
+        this.seed = (this.seed * 9301 + 49297) % 233280;
+        return this.seed / 233280;
+    }
+}
+
+// 1. IMPROVED FITNESS: Checks for Synonymous vs Missense
+export const calculateFitness = (seq: string, mutations: {type: "substitution" | "insertion" | "deletion", context: "coding" | "non-coding", aminoAcidChange: string}[]) => {
+    let fitness = 100;
+    
+    mutations.forEach(m => {
+        if (m.type === 'substitution' && m.context === 'coding') {
+            // Non-synonymous (Missense) is penalized, Synonymous (Silent) is not
+            if (m.aminoAcidChange && m.aminoAcidChange !== 'none') fitness -= 1.5;
+        } else if (m.type === 'insertion' || m.type === 'deletion') {
+            // Frameshifts are devastating
+            fitness -= 10.0;
+        }
+    });
+
+    // Penalize stop codons
+    const stopCodons = ['TAA', 'TAG', 'TGA'];
+    for (let i = 0; i < seq.length - 2; i += 3) {
+        if (stopCodons.includes(seq.substr(i, 3))) fitness -= 5;
+    }
+    return Math.max(0, fitness);
+};
+
+// 2. KIMURA 2-PARAMETER MODEL: Transitions vs Transversions
+export const getMutatedBase = (original: string, rng: SeededRandom) => {
+    const transitions: Record<string, string> = { 'A': 'G', 'G': 'A', 'C': 'T', 'T': 'C' };
+    const transversions: Record<string, string[]> = { 
+        'A': ['C', 'T'], 'G': ['C', 'T'], 'C': ['A', 'G'], 'T': ['A', 'G'] 
+    };
+    
+    // Transitions are statistically ~2x more likely in nature
+    if (rng.next() < 0.66) { 
+        return transitions[original];
+    } else {
+        const choices = transversions[original];
+        return choices[Math.floor(rng.next() * choices.length)];
+    }
+};

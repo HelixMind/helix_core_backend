@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { throw_custom_error } from "../utils/error.js";
-import { User } from "../db/Schema/User.js";
+import { User } from "../infrastructure/db/Schema/User.js";
 import { ResponseSchema } from "../types/index.js";
 import { email } from "zod";
 

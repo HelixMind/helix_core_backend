@@ -1,8 +1,8 @@
 import { UniqueConstraintError } from "sequelize";
-import { Token } from "../db/Schema/Token.js";
+import { Token } from "../infrastructure/db/Schema/Token.js";
 import { throw_custom_error } from "../utils/error.js";
 import bcrypt from "bcryptjs";
-import { sequelize } from "../db/index.js";
+import { sequelize } from "../infrastructure/db/index.js";
 
 const generate_otp = function() {
     return (Math.ceil(Math.random() * 900000) + 100000)

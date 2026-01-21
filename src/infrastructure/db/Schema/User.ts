@@ -1,7 +1,7 @@
 import { DataTypes, Sequelize } from "sequelize";
 import { sequelize } from "../index.js";
 import bcrypt from "bcryptjs";
-import { passwordSalt } from "../../constants/salts.js";
+import { passwordSalt } from "../../../constants/salts.js";
 import { Token } from "./Token.js";
 
 const User = sequelize.define(

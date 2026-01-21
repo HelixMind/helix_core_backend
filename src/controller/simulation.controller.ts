@@ -1,12 +1,10 @@
-import { Request, response, Response } from "express";
-import { parseFASTA, parseGFF } from "../utils/bioParsers.js";
+import { Request, Response } from "express";
 import {
   detectMutations,
   parseFASTAService,
-  runMutationSimulation,
 } from "../services/simulation.service.js";
 import { ResponseSchema } from "../types/index.js";
-import { calculateFitness, CODON_MAP, getMutatedBase, SeededRandom } from "../services/test.service.js";
+import { calculateFitness, CODON_MAP, getMutatedBase, SeededRandom } from "../services/simulation.service.js";
 
 // 1. FASTA Parser Controller
 export const parseFastaController = async (req: Request, res: Response) => {

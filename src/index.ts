@@ -2,16 +2,22 @@ import express, { Request, Response } from "express";
 import { auth_router } from "./router/auth.router.js";
 import colors from "colors";
 import cors from "cors";
+
+import { EnvFactory } from "./configs/EnvFactory/index.js";
+
+EnvFactory.create();
+
+// Remove when the entire architecture is set up
 import dotenv from "dotenv";
 dotenv.config();
 
-import "./db/index.js";
-import { User } from "./db/Schema/User.js";
+import "./infrastructure/db/index.js";
+import { User } from "./infrastructure/db/Schema/User.js";
 import { profile_router } from "./router/profile.router.js";
 import { auth_middleware } from "./middlewares/auth.middleware.js";
 import { send_mail } from "./services/mail.service.js";
 import { ResponseSchema } from "./types/index.js";
-import { Token } from "./db/Schema/Token.js";
+import { Token } from "./infrastructure/db/Schema/Token.js";
 import { generate_otp } from "./services/token.service.js";
 import simRouter from "./router/simulation.router.js";
 
