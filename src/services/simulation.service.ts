@@ -1,5 +1,7 @@
+import { readFile } from "node:fs";
 import { parseFASTA } from "../utils/bioParsers.js";
 import { createRNG } from "../utils/rng.js";
+import { throw_custom_error } from "../utils/error.js";
 
 // Helper: Classify if a mutation hits a Gene (CDS), Promoter, etc.
 const classifyMutation = (position: number, annotations: any[]) => {
@@ -151,14 +153,21 @@ export function parseFASTAService(fasta_files: Express.Multer.File[]) {
     }[] = [];
 
     fasta_files.forEach((fasta_file) => {
-        const fasta = fasta_file.buffer.toString("utf-8");
+        const fasta = fasta_file.path;
 
-        const records = parseFASTA(fasta);
+        readFile(fasta, 'utf-8', (err, data) => {
+            if (err) {
+                throw_custom_error('Error reading file', 500);
+                return;
+            }
 
-        fasta_outputs.push({
-        sequences: records,
-        count: Object.keys(records).length,
-        });
+            const records = parseFASTA(data);
+
+            fasta_outputs.push({
+            sequences: records,
+            count: Object.keys(records).length,
+            });
+        })
     });
 
     return fasta_outputs;

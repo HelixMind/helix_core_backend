@@ -14,9 +14,7 @@ export const parseFastaController = async (req: Request, res: Response) => {
 
   res.status(200).json({
     status: "success",
-    payload: {
-      response: fasta_outputs,
-    },
+    payload: fasta_outputs,
   } as ResponseSchema);
 };
 

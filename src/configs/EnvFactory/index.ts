@@ -8,7 +8,7 @@ export class EnvFactory {
     private envs: IAppEnvs|null = null;
 
     private constructor (path?: string) {
-        console.log(process.env);
+        // console.log(process.env);
 
         if (!path) {
             config()

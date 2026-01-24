@@ -12,13 +12,10 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import "./infrastructure/db/index.js";
-import { User } from "./infrastructure/db/Schema/User.js";
 import { profile_router } from "./router/profile.router.js";
 import { auth_middleware } from "./middlewares/auth.middleware.js";
-import { send_mail } from "./services/mail.service.js";
 import { ResponseSchema } from "./types/index.js";
-import { Token } from "./infrastructure/db/Schema/Token.js";
-import { generate_otp } from "./services/token.service.js";
+// import { generate_otp } from "./services/token.service.js";
 import simRouter from "./router/simulation.router.js";
 
 const app = express();
@@ -52,37 +49,6 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' })); // Increased from default 100kb
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-app.get("/", async (req: Request, res: Response) => {
-  res.send(`Hello, World! ${generate_otp()}`);
-});
-
-app.get("/api/v1/test_mail_service", async (req: Request, res: Response) => {
-  try {
-    await send_mail("reset-password", ["reremie523@gmail.com", "nzenwatachristopher186@gmail.com", "kidly204@gmail.com"], {
-      otp_code: 842931,
-      support_mail: "helix@traction3.com"
-    });
-    
-    res.status(200).json({
-      status: "success",
-      payload: {
-        message: "Mailer working",
-      }
-    } as ResponseSchema);
-  } catch (error) {
-    res.status(500).json({
-      status: "error",
-      error: error instanceof Error ? error.message : JSON.stringify(error),
-    } as ResponseSchema);
-  }
-});
-
-app.use("/api/v1/auth", auth_router);
-app.use("/api/v1/simulation", simRouter);
-
-app.use(auth_middleware);
-app.use("/api/v1/me", profile_router);
-
 // Error handler for payload too large
 app.use((err: any, req: Request, res: Response, next: any) => {
   if (err.type === 'entity.too.large') {
@@ -93,6 +59,37 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   }
   next(err);
 });
+
+app.get("/api/v1/ping", async (req: Request, res: Response) => {
+  res.send(`Hello, World!`);
+});
+
+// app.get("/api/v1/test_mail_service", async (req: Request, res: Response) => {
+//   try {
+//     await send_mail("reset-password", ["reremie523@gmail.com", "nzenwatachristopher186@gmail.com", "kidly204@gmail.com"], {
+//       otp_code: 842931,
+//       support_mail: "helix@traction3.com"
+//     });
+    
+//     res.status(200).json({
+//       status: "success",
+//       payload: {
+//         message: "Mailer working",
+//       }
+//     } as ResponseSchema);
+//   } catch (error) {
+//     res.status(500).json({
+//       status: "error",
+//       error: error instanceof Error ? error.message : JSON.stringify(error),
+//     } as ResponseSchema);
+//   }
+// });
+
+app.use("/api/v1/auth", auth_router);
+
+app.use(auth_middleware);
+app.use("/api/v1/simulation", simRouter);
+app.use("/api/v1/me", profile_router);
 
 app.listen(PORT, () => {
   console.log(colors.green(`Server is running on http://localhost:${PORT}`));

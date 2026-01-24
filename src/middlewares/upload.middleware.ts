@@ -14,10 +14,22 @@ const ALLOWED_EXTENSIONS_GFF = [
 //   '.fastq', '.vcf', '.gbk'
 // ]
 
-const storage = multer.memoryStorage(); // We use memoryStorage for direct parsing
+const storageFastas = multer.diskStorage({
+  destination: "../uploads/fastas",
+  filename: (req, file, cb) => {
+    const suffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    // path.extname extracts the extension (e.g., '.fasta')
+    const ext = path.extname(file.originalname); 
+    cb(null, file.fieldname + '_' + suffix + ext);
+  }
+});
+
+const storageGffs = multer.diskStorage({
+  destination: "../uploads/gffs"
+}); // We use memoryStorage for direct parsing
 
 export const uploadFasta = multer({
-  storage: storage,
+  storage: storageFastas,
   limits: {
     fileSize: 10 * 1024 * 1024, // Limit to 10MB for safety
   },
@@ -33,7 +45,7 @@ export const uploadFasta = multer({
 });
 
 export const uploadGff = multer({
-    storage,
+    storage: storageGffs,
     limits: {
         fileSize: 10 * 1024 * 1024, // Limit to 10MB for safety
     },
