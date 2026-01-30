@@ -3,10 +3,6 @@ import { auth_router } from "./router/auth.router.js";
 import colors from "colors";
 import cors from "cors";
 
-// import { EnvFactory } from "./configs/EnvFactory/index.js";
-
-// EnvFactory.create();
-
 // Remove when the entire architecture is set up
 import dotenv from "dotenv";
 dotenv.config();
