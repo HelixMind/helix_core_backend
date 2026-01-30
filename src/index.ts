@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
   "http://localhost:8080",
-  "https://helix-mind.vercel.app",
+  "https://helix-frontend-v2.vercel.app",
   "http://localhost:3000"
 ];
 
