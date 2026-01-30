@@ -3,9 +3,9 @@ import { auth_router } from "./router/auth.router.js";
 import colors from "colors";
 import cors from "cors";
 
-import { EnvFactory } from "./configs/EnvFactory/index.js";
+// import { EnvFactory } from "./configs/EnvFactory/index.js";
 
-EnvFactory.create();
+// EnvFactory.create();
 
 // Remove when the entire architecture is set up
 import dotenv from "dotenv";
@@ -15,8 +15,9 @@ import "./infrastructure/db/index.js";
 import { profile_router } from "./router/profile.router.js";
 import { auth_middleware } from "./middlewares/auth.middleware.js";
 import { ResponseSchema } from "./types/index.js";
+import { fastaRouters } from "./router/fastas.router.js";
+import { simRouter } from "./router/simulation.router.js";
 // import { generate_otp } from "./services/token.service.js";
-import simRouter from "./router/simulation.router.js";
 
 const app = express();
 
@@ -89,6 +90,7 @@ app.use("/api/v1/auth", auth_router);
 
 app.use(auth_middleware);
 app.use("/api/v1/simulation", simRouter);
+app.use("/api/v1/fastas", fastaRouters)
 app.use("/api/v1/me", profile_router);
 
 app.listen(PORT, () => {

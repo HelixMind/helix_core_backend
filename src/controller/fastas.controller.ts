@@ -4,13 +4,31 @@ import {
   parseFASTAService,
 } from "../services/simulation.service.js";
 import { ResponseSchema } from "../types/index.js";
-import { calculateFitness, CODON_MAP, getMutatedBase, SeededRandom } from "../services/simulation.service.js";
+import {
+  calculateFitness,
+  CODON_MAP,
+  getMutatedBase,
+  SeededRandom,
+} from "../services/simulation.service.js";
+import { FastaFiles } from "../infrastructure/db/Schema/FastaFiles.js";
+import { readFileSync } from "node:fs";
+import { FastaFileInstance } from "../types/fastas.type.js";
+import { parseFASTA } from "../utils/bioParsers.js";
+import path from "node:path";
 
 // 1. FASTA Parser Controller
 export const parseFastaController = async (req: Request, res: Response) => {
   let fasta_files = req.files as Express.Multer.File[];
+  let user_id = req.headers.user_id as string;
 
-  const fasta_outputs = parseFASTAService(fasta_files);
+  if (!user_id) {
+    return res.status(401).json({
+      status: "error",
+      error: "Unauthorized request",
+    } as ResponseSchema);
+  }
+
+  const fasta_outputs = await parseFASTAService(fasta_files, user_id);
 
   res.status(200).json({
     status: "success",
@@ -39,16 +57,24 @@ export const parseGffController = async (req: Request, res: Response) => {
 export const simulateController = async (req: Request, res: Response) => {
   try {
     let fasta_files = req.files as Express.Multer.File[];
+    let user_id = req.headers.user_id as string;
 
-    const fasta_outputs = parseFASTAService(fasta_files);
+    if (!user_id) {
+      return res.status(401).json({
+        status: "error",
+        error: "Unauthorized request",
+      } as ResponseSchema);
+    }
+
+    const fasta_outputs = await parseFASTAService(fasta_files, user_id);
 
     const sequence = Object.values(fasta_outputs[0].sequences)[0];
-     
+
     // console.log(sequence);
-    
+
     let { params } = req.body;
     params = JSON.parse(params);
-    
+
     const rng = new SeededRandom(params.seed || Date.now());
 
     // 3. ENVIRONMENTAL LINKAGE: Temperature affects mutation rate (Arrhenius-like scaling)
@@ -126,7 +152,7 @@ export const simulateController = async (req: Request, res: Response) => {
         mutations: allMutations,
         fitnessHistory,
         hotspots: [], // logic remains the same as previous
-      }
+      },
     } as ResponseSchema);
   } catch (error: any) {
     res.status(500).json({ error: `Simulation failed: ${error.message}` });
@@ -134,6 +160,15 @@ export const simulateController = async (req: Request, res: Response) => {
 };
 
 export const checkMutation = async (req: Request, res: Response) => {
+  let user_id = req.headers.user_id as string;
+
+  if (!user_id) {
+    return res.status(401).json({
+      status: "error",
+      error: "Unauthorized request",
+    } as ResponseSchema);
+  }
+
   const files = req.files as
     | {
         ref_fasta_files: Express.Multer.File[];
@@ -169,7 +204,7 @@ export const checkMutation = async (req: Request, res: Response) => {
   }
 
   const ref_seq = Object.values(
-    parseFASTAService(ref_fasta_files)[0].sequences
+    (await parseFASTAService(ref_fasta_files, user_id))[0].sequences
   )[0];
 
   if (!ref_seq) {
@@ -181,7 +216,8 @@ export const checkMutation = async (req: Request, res: Response) => {
     return;
   }
 
-  const query_seq = parseFASTAService(query_fasta_files)[0].sequences[seq_id];
+  const query_seq = (await parseFASTAService(query_fasta_files, user_id))[0]
+    .sequences[seq_id];
 
   if (!query_seq) {
     res.status(422).json({
@@ -202,4 +238,87 @@ export const checkMutation = async (req: Request, res: Response) => {
     status: "success",
     payload: response,
   } as ResponseSchema);
+};
+
+export const previouslyReadFastas = async (req: Request, res: Response) => {
+  let user_id = req.headers.user_id as string;
+
+  if (!user_id) {
+    return res.status(401).json({
+      status: "error",
+      error: "Unauthorized request",
+    } as ResponseSchema);
+  }
+
+  const fasta_files = (await FastaFiles.findAll({
+    where: {
+      user_id,
+    },
+    order: [["createdAt", "DESC"]], // Here is your requested Order By
+  })) as unknown as FastaFileInstance[];
+
+  return res.status(200).json({
+    status: "success",
+    payload: fasta_files.map(fasta_file => {
+      return { fasta_id: fasta_file.id, user_id: "", file: fasta_file.file.replaceAll(path.resolve(process.cwd(), "src/uploads/fastas/"), ""), createdAt: fasta_file.createdAt}
+    }) 
+  } as ResponseSchema)
+};
+
+export const previoslyReadFasta = async (req: Request, res: Response) => {
+  const { fasta_id } = req.params as Record<string, string>;
+
+  if (fasta_id.trim().length <= 0) {
+    return res.status(400).json({
+      status: "error",
+      error: "No fasta file id passed to read from",
+    } as ResponseSchema);
+  }
+
+  let user_id = req.headers.user_id as string;
+
+  if (!user_id) {
+    return res.status(401).json({
+      status: "error",
+      error: "Unauthorized request",
+    } as ResponseSchema);
+  }
+
+  const fasta_file = (await FastaFiles.findOne({
+    where: {
+      user_id,
+      id: fasta_id,
+    },
+    order: [["createdAt", "DESC"]], // Here is your requested Order By
+  })) as unknown as FastaFileInstance;
+
+  if (!fasta_file) {
+    return res.status(404).json({
+      status: "error",
+      error: "No fasta file found",
+    } as ResponseSchema);
+  }
+
+  try {
+    const file = await readFileSync(fasta_file.file as string, "utf-8");
+
+    const fasta_outputs: {
+      sequences: Record<string, string>;
+      count: number;
+    }[] = [];
+
+    const response = parseFASTA(file);
+
+    fasta_outputs.push({
+      sequences: response,
+      count: Object.keys(response).length,
+    });
+
+    return fasta_outputs;
+  } catch (error) {
+    return res.status(404).json({
+      status: "error",
+      error: "Fasta file no longer exists",
+    } as ResponseSchema);
+  }
 };

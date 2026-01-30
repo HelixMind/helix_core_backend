@@ -1,7 +1,8 @@
-import { readFile } from "node:fs";
+import { readFile, readFileSync } from "node:fs";
 import { parseFASTA } from "../utils/bioParsers.js";
 import { createRNG } from "../utils/rng.js";
 import { throw_custom_error } from "../utils/error.js";
+import { FastaFiles } from "../infrastructure/db/Schema/FastaFiles.js";
 
 // Helper: Classify if a mutation hits a Gene (CDS), Promoter, etc.
 const classifyMutation = (position: number, annotations: any[]) => {
@@ -142,7 +143,7 @@ export const runMutationSimulation = (params: any) => {
     };
 };
 
-export function parseFASTAService(fasta_files: Express.Multer.File[]) {
+export async function parseFASTAService(fasta_files: Express.Multer.File[], user_id: string, shouldSave: boolean = true) {
     if (!fasta_files || fasta_files.length <= 0) {
         throw new Error("Custom Error: No fasta passed")
     }
@@ -152,23 +153,27 @@ export function parseFASTAService(fasta_files: Express.Multer.File[]) {
         count: number;
     }[] = [];
 
-    fasta_files.forEach((fasta_file) => {
+    const fasta_promises = fasta_files.map(async (fasta_file) => {
         const fasta = fasta_file.path;
 
-        readFile(fasta, 'utf-8', (err, data) => {
-            if (err) {
-                throw_custom_error('Error reading file', 500);
-                return;
-            }
+        const fasta_txt = await readFileSync(fasta, "utf-8");
 
-            const records = parseFASTA(data);
+        const response = parseFASTA(fasta_txt)
 
-            fasta_outputs.push({
-            sequences: records,
-            count: Object.keys(records).length,
-            });
-        })
+        fasta_outputs.push({
+            sequences: response,
+            count: Object.keys(response).length
+        });
     });
+
+    await Promise.all(fasta_promises);
+
+    const filePaths = fasta_files.map((fasta_file) => { return {
+        file: fasta_file.path,
+        user_id
+    } });
+
+    const new_fastas = await FastaFiles.bulkCreate(filePaths);
 
     return fasta_outputs;
 }

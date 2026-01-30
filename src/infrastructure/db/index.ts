@@ -6,6 +6,7 @@ import { Sequelize } from "sequelize";
 
 import { User } from "./Schema/User.js";
 import { Token } from "./Schema/Token.js";
+import { FastaFiles } from "./Schema/FastaFiles.js";
 
 const sequelize = new Sequelize(process.env.DATABASE_CONNECTION_URL!, {
     dialect: "mysql",
