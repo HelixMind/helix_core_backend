@@ -6,17 +6,11 @@ Self-hosted resistance gene detection. No rate limits, <2s latency.
 import asyncio
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
-
-from core.config import (
-    RESFINDER_DB,
-    POINTFINDER_DB,
-    DEFAULT_IDENTITY_THRESHOLD,
-    DEFAULT_MIN_COVERAGE,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +22,9 @@ async def _enrich_hits_with_literature(hits):
     except Exception as e:
         logger.warning("PubMed enrichment failed (non-fatal): %s", e)
         return hits
+
+RESFINDER_DB   = Path(os.getenv("RESFINDER_DB_PATH",   "./databases/resfinder_db"))
+POINTFINDER_DB = Path(os.getenv("POINTFINDER_DB_PATH", "./databases/pointfinder_db"))
 
 POINTFINDER_ORGANISMS = {
     "escherichia coli", "klebsiella pneumoniae", "salmonella",
@@ -44,14 +41,9 @@ class ResFinderError(Exception):
 async def analyze_sequence(
     sequence: str,
     organism: Optional[str] = None,
-    identity_threshold: Optional[float] = None,
-    min_coverage: Optional[float] = None,
+    identity_threshold: float = 0.90,
+    min_coverage: float = 0.60,
 ) -> dict:
-    if identity_threshold is None:
-        identity_threshold = DEFAULT_IDENTITY_THRESHOLD
-    if min_coverage is None:
-        min_coverage = DEFAULT_MIN_COVERAGE
-    
     _validate_sequence(sequence)
     _validate_dbs()
 
@@ -76,20 +68,23 @@ async def analyze_sequence(
 
         results = _parse_results(output_dir, identity_threshold, min_coverage, use_pointfinder)
         results["hits"] = await _enrich_hits_with_literature(results["hits"])
+
+        # Class A/B/C anomaly scoring
+        try:
+            from core.scoring import score_sequence
+            results["anomalies"] = score_sequence(
+                sequence=sequence,
+                hits=results["hits"],
+                organism=organism,
+            )
+        except Exception as e:
+            logger.warning("Anomaly scoring failed (non-fatal): %s", e)
+            results["anomalies"] = None
+
         return results
 
 
-async def stream_analyze_sequence(
-    sequence: str,
-    organism: Optional[str] = None,
-    identity_threshold: Optional[float] = None,
-    min_coverage: Optional[float] = None,
-):
-    if identity_threshold is None:
-        identity_threshold = DEFAULT_IDENTITY_THRESHOLD
-    if min_coverage is None:
-        min_coverage = DEFAULT_MIN_COVERAGE
-    
+async def stream_analyze_sequence(sequence, organism=None, identity_threshold=0.90, min_coverage=0.60):
     try:
         yield {"status": "running", "message": "ResFinder analysis started"}
         results = await analyze_sequence(sequence, organism, identity_threshold, min_coverage)
