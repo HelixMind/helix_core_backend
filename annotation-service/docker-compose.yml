@@ -4,7 +4,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -21,12 +21,12 @@ services:
 
   resfinder-worker:
     build:
-      context: .
+      context: ./backend
       dockerfile: services/resfinder/Dockerfile
     volumes:
       # Mount raw cloned DB folders — indexing happens inside the container
-      - ../databases/resfinder_db:/databases/resfinder_db
-      - ../databases/pointfinder_db:/databases/pointfinder_db
+      - ./databases/resfinder_db:/databases/resfinder_db
+      - ./databases/pointfinder_db:/databases/pointfinder_db
     environment:
       - RESFINDER_DB_PATH=/databases/resfinder_db
       - POINTFINDER_DB_PATH=/databases/pointfinder_db

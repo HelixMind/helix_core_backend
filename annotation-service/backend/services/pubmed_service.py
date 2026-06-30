@@ -12,15 +12,15 @@ to get 10 req/s — set as NCBI_API_KEY env var.
 
 import asyncio
 import logging
-import os
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 import httpx
 
+from core.config import NCBI_API_KEY
+
 logger = logging.getLogger(__name__)
 
-NCBI_API_KEY  = os.getenv("NCBI_API_KEY", "")
 EFETCH_URL    = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 PUBMED_BASE   = "https://pubmed.ncbi.nlm.nih.gov"
 
