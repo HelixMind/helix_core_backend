@@ -23,8 +23,8 @@ async def _enrich_hits_with_literature(hits):
         logger.warning("PubMed enrichment failed (non-fatal): %s", e)
         return hits
 
-RESFINDER_DB   = Path(os.getenv("RESFINDER_DB_PATH",   "./databases/resfinder_db"))
-POINTFINDER_DB = Path(os.getenv("POINTFINDER_DB_PATH", "./databases/pointfinder_db"))
+RESFINDER_DB   = Path(os.getenv("RESFINDER_DB_PATH",   "../databases/resfinder_db"))
+POINTFINDER_DB = Path(os.getenv("POINTFINDER_DB_PATH", "../databases/pointfinder_db"))
 
 POINTFINDER_ORGANISMS = {
     "escherichia coli", "klebsiella pneumoniae", "salmonella",
