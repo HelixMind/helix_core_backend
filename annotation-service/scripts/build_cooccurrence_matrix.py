@@ -2,22 +2,16 @@
 HelixMind — Build Co-occurrence Matrix from BV-BRC (PATRIC)
 scripts/build_cooccurrence_matrix.py
 
-Pulls AMR metadata from BV-BRC public API, computes real resistance class
-pair frequencies from clinical isolates, writes matrix to core/data/.
+Two-call approach: fetch Resistant + Susceptible separately
+(BV-BRC API rejects open queries without a phenotype filter).
 
-Run once to generate the matrix. Re-run periodically to update.
-
-Usage:
-    python3 scripts/build_cooccurrence_matrix.py
-    → writes backend/core/data/cooccurrence_matrix.json
-
-BV-BRC API docs: https://www.bv-brc.org/api/doc/
+Correct denominator:
+  prevalence = co_resistant / genomes_tested_for_both_classes
 """
 
 import asyncio
 import json
 import logging
-import os
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -27,178 +21,161 @@ import httpx
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-BV_BRC_API     = "https://www.bv-brc.org/api/genome_amr/"
-OUTPUT_DIR     = Path(__file__).parent.parent / "backend" / "core" / "data"
-OUTPUT_FILE    = OUTPUT_DIR / "cooccurrence_matrix.json"
+BV_BRC_API  = "https://www.bv-brc.org/api/genome_amr/"
+OUTPUT_DIR  = Path(__file__).parent.parent / "backend" / "core" / "data"
+OUTPUT_FILE = OUTPUT_DIR / "cooccurrence_matrix.json"
 
-# Map BV-BRC antibiotic names → AMR classes
-# Source: WHONET/EUCAST antibiotic classification
 DRUG_TO_CLASS = {
-    # Beta-lactams
     "ampicillin": "beta-lactam", "amoxicillin": "beta-lactam",
     "amoxicillin/clavulanic acid": "beta-lactam", "piperacillin": "beta-lactam",
     "piperacillin/tazobactam": "beta-lactam", "cephalothin": "beta-lactam",
     "cefazolin": "beta-lactam", "cefoxitin": "beta-lactam",
     "ceftriaxone": "beta-lactam", "ceftazidime": "beta-lactam",
     "cefepime": "beta-lactam", "cefotaxime": "beta-lactam",
+    "cefuroxime": "beta-lactam", "cephalexin": "beta-lactam",
     "meropenem": "carbapenem", "imipenem": "carbapenem",
     "ertapenem": "carbapenem", "doripenem": "carbapenem",
-    # Aminoglycosides
     "gentamicin": "aminoglycoside", "tobramycin": "aminoglycoside",
     "amikacin": "aminoglycoside", "streptomycin": "aminoglycoside",
     "kanamycin": "aminoglycoside", "neomycin": "aminoglycoside",
-    # Fluoroquinolones
     "ciprofloxacin": "fluoroquinolone", "levofloxacin": "fluoroquinolone",
     "moxifloxacin": "fluoroquinolone", "norfloxacin": "fluoroquinolone",
     "ofloxacin": "fluoroquinolone", "enrofloxacin": "fluoroquinolone",
-    # Tetracyclines
     "tetracycline": "tetracycline", "doxycycline": "tetracycline",
     "minocycline": "tetracycline", "tigecycline": "tetracycline",
-    # Sulfonamides / Trimethoprim
     "sulfamethoxazole": "sulfonamide", "sulfisoxazole": "sulfonamide",
-    "trimethoprim": "trimethoprim",
-    "trimethoprim/sulfamethoxazole": "trimethoprim",
-    # Macrolides
+    "trimethoprim": "trimethoprim", "trimethoprim/sulfamethoxazole": "trimethoprim",
     "erythromycin": "macrolide", "azithromycin": "macrolide",
-    "clarithromycin": "macrolide", "telithromycin": "macrolide",
-    # Colistin / Polymyxins
+    "clarithromycin": "macrolide",
     "colistin": "colistin", "polymyxin b": "colistin",
-    # Glycopeptides
     "vancomycin": "glycopeptide", "teicoplanin": "glycopeptide",
-    # Phenicols
     "chloramphenicol": "phenicol", "florfenicol": "phenicol",
-    # Rifamycins
     "rifampicin": "rifamycin", "rifampin": "rifamycin",
-    # Oxazolidinones
-    "linezolid": "oxazolidinone", "tedizolid": "oxazolidinone",
+    "linezolid": "oxazolidinone",
 }
 
-# BV-BRC resistant phenotype labels
-RESISTANT_LABELS = {"Resistant", "resistant", "R"}
 
-
-async def fetch_amr_data(limit: int = 25000) -> list[dict]:
-    """
-    Pull AMR phenotype records from BV-BRC API.
-    Each record = one isolate tested against one antibiotic.
-    """
-    logger.info("Fetching AMR data from BV-BRC (limit=%d)...", limit)
-
-    params = {
-        "eq(resistant_phenotype,Resistant)": "",
-        "select(genome_id,antibiotic,resistant_phenotype,genome_name)": "",
-        "limit": limit,
-        "http_accept": "application/json",
-    }
-
-    # BV-BRC uses a special query format
+async def fetch_phenotype(phenotype_label: str, limit: int = 25000) -> list[dict]:
+    """Fetch records for a specific phenotype label."""
     url = (
         f"{BV_BRC_API}"
-        f"?eq(resistant_phenotype,Resistant)"
-        f"&select(genome_id,antibiotic,resistant_phenotype,genome_name)"
+        f"?eq(resistant_phenotype,{phenotype_label})"
+        f"&select(genome_id,antibiotic,resistant_phenotype)"
         f"&limit({limit})"
-        f"&http_accept=application/json"
     )
-
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(
-            url,
-            headers={"Accept": "application/json"},
-        )
+        response = await client.get(url, headers={"Accept": "application/json"})
         response.raise_for_status()
         data = response.json()
-        logger.info("Fetched %d AMR records", len(data))
+        logger.info("Fetched %d %s records", len(data), phenotype_label)
         return data
 
 
-def compute_cooccurrence(records: list[dict]) -> dict:
+def compute_cooccurrence(all_records: list[dict]) -> dict:
     """
-    Group records by genome_id, collect resistant classes per isolate,
-    then compute pair co-occurrence frequencies.
+    Group by genome. Track tested classes and resistant classes per genome.
+    Prevalence = co_resistant / tested_for_both (correct conditional probability).
     """
-    # Group by genome: genome_id -> set of resistant classes
-    genome_classes: dict[str, set] = defaultdict(set)
+    # genome_id -> class -> phenotype ("resistant" | "susceptible")
+    genome_data: dict[str, dict[str, str]] = defaultdict(dict)
 
-    for record in records:
-        genome_id  = record.get("genome_id", "")
+    for record in all_records:
+        genome_id  = record.get("genome_id", "").strip()
         antibiotic = record.get("antibiotic", "").lower().strip()
-        phenotype  = record.get("resistant_phenotype", "")
+        phenotype  = record.get("resistant_phenotype", "").strip()
 
-        if not genome_id or phenotype not in RESISTANT_LABELS:
+        if not genome_id or not antibiotic:
             continue
 
         amr_class = DRUG_TO_CLASS.get(antibiotic)
-        if amr_class:
-            genome_classes[genome_id].add(amr_class)
+        if not amr_class:
+            continue
 
-    logger.info("Grouped into %d genomes with resistance data", len(genome_classes))
+        # Resistant beats susceptible — don't overwrite R with S
+        if genome_data[genome_id].get(amr_class) != "resistant":
+            if phenotype in ("Resistant", "resistant", "R"):
+                genome_data[genome_id][amr_class] = "resistant"
+            elif phenotype in ("Susceptible", "susceptible", "S", "Sensitive"):
+                genome_data[genome_id][amr_class] = "susceptible"
 
-    # Count pair co-occurrences
-    pair_counts:  dict[str, int] = defaultdict(int)
-    class_counts: dict[str, int] = defaultdict(int)
-    total_genomes = len(genome_classes)
+    logger.info("Processed %d genomes", len(genome_data))
 
-    for genome_id, classes in genome_classes.items():
-        classes = list(classes)
-        for cls in classes:
-            class_counts[cls] += 1
-        for pair in combinations(sorted(classes), 2):
+    # Count pair co-occurrences with correct denominator
+    pair_stats: dict[str, dict] = defaultdict(lambda: {"tested": 0, "co_resistant": 0})
+
+    for genome_id, class_phenotypes in genome_data.items():
+        classes = sorted(class_phenotypes.keys())
+        for pair in combinations(classes, 2):
             key = f"{pair[0]}|{pair[1]}"
-            pair_counts[key] += 1
+            pair_stats[key]["tested"] += 1
+            if (class_phenotypes[pair[0]] == "resistant" and
+                    class_phenotypes[pair[1]] == "resistant"):
+                pair_stats[key]["co_resistant"] += 1
 
-    # Convert to prevalence (fraction of all genomes)
+    # Build matrix — minimum 10 genomes tested for the pair
     matrix = {}
-    for pair_key, count in pair_counts.items():
+    for pair_key, stats in pair_stats.items():
+        if stats["tested"] < 10:
+            continue
         cls_a, cls_b = pair_key.split("|")
-        prevalence = count / total_genomes if total_genomes > 0 else 0.0
+        prevalence   = stats["co_resistant"] / stats["tested"]
         matrix[pair_key] = {
             "class_a":      cls_a,
             "class_b":      cls_b,
-            "count":        count,
+            "co_resistant": stats["co_resistant"],
+            "tested":       stats["tested"],
             "prevalence":   round(prevalence, 6),
-            "total_genomes": total_genomes,
         }
 
-    logger.info("Computed %d unique resistance class pairs", len(matrix))
+    # Log top 15
+    top = sorted(matrix.values(), key=lambda x: x["prevalence"], reverse=True)[:15]
+    logger.info("Top 15 co-occurrence pairs (correct denominator):")
+    for p in top:
+        logger.info(
+            "  %-20s + %-20s = %5.1f%% (%d/%d tested)",
+            p["class_a"], p["class_b"],
+            p["prevalence"] * 100,
+            p["co_resistant"], p["tested"],
+        )
+
     return matrix
 
 
-def write_matrix(matrix: dict, class_counts: dict = None) -> None:
+async def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Two separate calls — BV-BRC rejects open queries without a phenotype filter
+    resistant   = await fetch_phenotype("Resistant",   limit=25000)
+    susceptible = await fetch_phenotype("Susceptible", limit=25000)
+    all_records = resistant + susceptible
+
+    logger.info("Total records: %d (%d R + %d S)",
+                len(all_records), len(resistant), len(susceptible))
+
+    matrix = compute_cooccurrence(all_records)
+    rare   = sum(1 for v in matrix.values() if v["prevalence"] < 0.05)
+    common = sum(1 for v in matrix.values() if v["prevalence"] >= 0.20)
 
     output = {
         "metadata": {
-            "source":      "BV-BRC (PATRIC) AMR phenotype database",
-            "source_url":  "https://www.bv-brc.org/api/genome_amr/",
-            "description": "Real co-occurrence frequencies from clinical isolates",
-            "note":        "prevalence = fraction of resistant genomes carrying both classes",
+            "source":        "BV-BRC (PATRIC) AMR phenotype database",
+            "source_url":    "https://www.bv-brc.org/api/genome_amr/",
+            "method":        "co_resistant / genomes_tested_for_both_classes",
+            "total_records": len(all_records),
+            "resistant":     len(resistant),
+            "susceptible":   len(susceptible),
         },
         "matrix": matrix,
     }
 
     OUTPUT_FILE.write_text(json.dumps(output, indent=2))
-    logger.info("Matrix written to %s", OUTPUT_FILE)
 
-    # Print summary
-    rare   = sum(1 for v in matrix.values() if v["prevalence"] < 0.05)
-    common = sum(1 for v in matrix.values() if v["prevalence"] >= 0.20)
-    logger.info("Summary: %d pairs total | %d rare (<5%%) | %d common (>=20%%)",
-                len(matrix), rare, common)
-
-
-async def main():
-    try:
-        records = await fetch_amr_data(limit=25000)
-        matrix  = compute_cooccurrence(records)
-        write_matrix(matrix)
-        print(f"\n✅ Co-occurrence matrix built from {len(records)} BV-BRC records")
-        print(f"   Output: {OUTPUT_FILE}")
-        print(f"   Pairs computed: {len(matrix)}")
-    except httpx.HTTPStatusError as e:
-        logger.error("BV-BRC API error: %s", e)
-        print("\n❌ Failed to fetch BV-BRC data — check network and try again")
-    except Exception as e:
-        logger.exception("Unexpected error: %s", e)
+    print(f"\n✅ Co-occurrence matrix rebuilt")
+    print(f"   Records:       {len(all_records)} ({len(resistant)} R + {len(susceptible)} S)")
+    print(f"   Pairs:         {len(matrix)}")
+    print(f"   Rare  (<5%):   {rare}")
+    print(f"   Common (≥20%): {common}")
+    print(f"   Output:        {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
